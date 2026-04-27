@@ -25,36 +25,46 @@ app.add_middleware(
 )
 
 def extract_text_from_hwp(hwp_path: str) -> str:
-    # pyhwp의 hwp5txt 명령어를 이용해 순수 텍스트 추출
+    import sys
+    import shutil
+    import tempfile
+    
+    # hwp5txt 경로 찾기
+    hwp5txt_path = shutil.which('hwp5txt')
+    if not hwp5txt_path:
+        hwp5txt_path = os.path.join(os.path.dirname(sys.executable), 'Scripts', 'hwp5txt.exe')
+        if not os.path.exists(hwp5txt_path):
+            hwp5txt_path = os.path.join(os.path.dirname(sys.executable), 'bin', 'hwp5txt')
+            
+    cmd = [hwp5txt_path] if hwp5txt_path and os.path.exists(hwp5txt_path) else ['hwp5txt']
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as temp_out:
+        out_path = temp_out.name
+        
+    cmd.extend(['--output', out_path, hwp_path])
+    
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    
     try:
         result = subprocess.run(
-            ['hwp5txt', hwp_path], 
-            capture_output=True, 
-            text=True, 
+            cmd,
+            capture_output=True,
+            text=True,
             encoding='utf-8',
-            check=True
+            check=True,
+            env=env
         )
-        return result.stdout
-    except Exception as e:
-        print(f"hwp5txt 에러: {e}")
-        # pyhwp가 PATH에 없는 경우 파이썬 직접 실행 시도
-        import sys
-        import shutil
-        hwp5txt_path = shutil.which('hwp5txt')
-        if not hwp5txt_path:
-            hwp5txt_path = os.path.join(os.path.dirname(sys.executable), 'Scripts', 'hwp5txt.exe')
         
-        if os.path.exists(hwp5txt_path):
-             result = subprocess.run(
-                [hwp5txt_path, hwp_path], 
-                capture_output=True, 
-                text=True, 
-                encoding='utf-8',
-                check=True
-            )
-             return result.stdout
-        else:
-             raise Exception("hwp5txt 도구를 찾을 수 없습니다.")
+        with open(out_path, 'r', encoding='utf-8', errors='replace') as f:
+            return f.read()
+    except subprocess.CalledProcessError as e:
+        raise Exception(f"Command '{e.cmd}' returned non-zero exit status {e.returncode}.\nStderr: {e.stderr}")
+    except Exception as e:
+        raise Exception(f"hwp5txt 실행 중 오류 발생: {e}")
+    finally:
+        if os.path.exists(out_path):
+            os.unlink(out_path)
 
 @app.post("/api/extract-news")
 async def extract_news(file: UploadFile = File(...)):
