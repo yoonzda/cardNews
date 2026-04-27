@@ -5,3 +5,4 @@ google-genai
 olefile
 pyhwp
 python-dotenv
+six
